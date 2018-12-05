@@ -126,13 +126,13 @@ bool scan_matrix() {
 }
 
 void update_key_index(int8_t index, uint8_t source) {
+    LOG_LV2("KINDEX", "I:%i S:%u", index, source);
+
 #ifdef MASTER
     key_index_t key{
         .index = index,
         .source = source
     };
-
-    LOG_LV2("KINDEX", "I:%i S:%u", key.index, key.source);
 
     if (next_index < KEY_INDEX_NUM && key.index > 0) {
         key_index[next_index++] = key;
@@ -153,9 +153,13 @@ void update_key_index(int8_t index, uint8_t source) {
         }
     }
 
-    LOG_LV2("KINDEX", "KI:%i", next_index);
+    LOG_LV2("KINDEX", "NI:%i", next_index);
 
     translate_key_index();
+#endif
+
+#ifdef SLAVE
+    notify_key_index(&index);
 #endif
 }
 
@@ -212,4 +216,38 @@ void translate_key_index() {
 
     send_key_report(&report);
 }
+
+#ifdef HAS_SLAVE
+void clear_key_index_from_source(uint8_t source) {
+    LOG_LV2("KINDEX", "Clear all key index with S:%u, NI:%i", source, next_index);
+
+    for (int i = 0; i < next_index; i++) {
+        if (key_index[i].source == source) {
+            key_index[i] = {0};
+        }
+    }
+
+    for (int i = 0; i < next_index; i++) {
+        if (key_index[i].source == 0) {
+            int j = i + 1;
+
+            while (j < next_index && key_index[j].source == 0) {
+                j++;
+            }
+
+            if (j < next_index) {
+                key_index[i] = key_index[j];
+            }
+        }
+    }
+
+    while (next_index > 0 && key_index[next_index - 1].source == 0) {
+        next_index--;
+    }
+
+    LOG_LV2("KINDEX", "After clear KI:%i", next_index);
+
+    translate_key_index();
+}
+#endif
 #endif

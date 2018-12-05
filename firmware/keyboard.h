@@ -5,12 +5,12 @@
 #include "pin_mapping.h"
 
 /* Keyboard */
-/* Keyboard part, e.g. MASTER = 0 and SLAVE = 1 */
-#define MASTER            0
-/* #define SLAVE             1 */
+/* Keyboard part, e.g. MASTER and SLAVE */
+#define MASTER
+/* #define SLAVE */
 /* Key source, to specify key stroke came from which part of the keyboard. */
-#define SOURCE_MASTER     0
-#define SOURCE_SLAVE      1
+#define SOURCE_MASTER     1
+#define SOURCE_SLAVE      2
 #define DEVICE_MODEL      "BlueMicro"
 #define MANUFACTURER_NAME "JPConstantineau.com"
 
@@ -24,8 +24,10 @@
 #ifdef MASTER
 /* If keyboard has slave side. */
 #define HAS_SLAVE
-#define DEVICE_NAME "ErgoTravel"
-#define SOURCE      SOURCE_MASTER
+#define DEVICE_NAME    "ErgoTravel"
+#define SOURCE         SOURCE_MASTER
+#define PERIPHERAL_NUM 1
+#define CENTRAL_NUM    1
 
 const int8_t MATRIX[MATRIX_ROW_NUM][MATRIX_COL_NUM] = {
     {1,  2,  3,  4,  5,  6,  7},
@@ -36,15 +38,16 @@ const int8_t MATRIX[MATRIX_ROW_NUM][MATRIX_COL_NUM] = {
 #endif
 
 #ifdef SLAVE
-#define DEVICE_NAME "ErgoTravel - Slave Side"
-#define SOURCE      SOURCE_SLAVE
+#define DEVICE_NAME    "ErgoTravel - Slave Side"
+#define SOURCE         SOURCE_SLAVE
+#define PERIPHERAL_NUM 1
+#define CENTRAL_NUM    0
 
-const int8_t MATRIX[MATRIX_ROWS][MATRIX_COLS] = {
+const int8_t MATRIX[MATRIX_ROW_NUM][MATRIX_COL_NUM] = {
     {14, 13, 12, 11, 10, 9,  8},
     {28, 27, 26, 25, 24, 23, 22},
     {42, 41, 40, 39, 38, 37, 36},
     {56, 55, 54, 53, 52, 51, 50}
 };
 #endif
-
 #endif

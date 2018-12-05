@@ -16,6 +16,10 @@ void update_key_index(int8_t index, uint8_t source);
 
 #ifdef MASTER
 void translate_key_index(void);
+
+#ifdef HAS_SLAVE
+void clear_key_index_from_source(uint8_t source);
+#endif
 #endif
 
 #endif
