@@ -4,6 +4,7 @@ BLEDis ble_dis;
 
 #ifdef MASTER
 BLEHidAdafruit ble_hid;
+bool sent_key_release = true;
 
 #ifdef HAS_SLAVE
 /* Slave link */
@@ -15,8 +16,6 @@ void slave_scan_callback(ble_gap_evt_adv_report_t *report);
 void slave_connect_callback(uint16_t conn_hdl);
 void slave_disconnect_callback(uint16_t conn_hdl, uint8_t reason);
 #endif
-
-bool sent_key_release = true;
 #endif
 
 #ifdef SLAVE

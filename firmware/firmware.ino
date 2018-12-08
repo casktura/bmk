@@ -19,15 +19,17 @@ uint32_t timestamp[MATRIX_ROW_NUM][MATRIX_COL_NUM]{0};
 typedef struct {
     int8_t index;
     uint8_t source;
+    bool translated;
+    bool has_modifiers;
+    bool is_key;
+    uint8_t modifiers;
+    uint8_t key;
 } key_index_t;
 
-key_index_t key_index[KEY_INDEX_NUM]{0};
+key_index_t keys[KEY_NUM]{0};
 
-bool operator!=(const key_index_t &lhs, const key_index_t &rhs) {
-    return lhs.index != rhs.index || lhs.source != rhs.source;
-}
-
-int next_index = 0;
+int next_key = 0;
+bool has_key_pending = false;
 #endif
 
 void setup() {
@@ -46,6 +48,12 @@ void setup() {
 
 void loop() {
     scan_matrix();
+
+#ifdef MASTER
+    if (has_key_pending) {
+        generate_send_key_report();
+    }
+#endif
 
     delay(SCAN_DELAY);
 }
@@ -85,25 +93,20 @@ bool scan_matrix() {
 
         for (int j = 0; j < MATRIX_COL_NUM; j++) {
             bool pressed = ((pin_data >> COLS[j]) & 1) == 0;
-
             uint32_t current_millis = millis();
 
-            if (!key_pressed[i][j] && pressed) {
-                /* On key press */
+            if  (key_pressed[i][j] == pressed) {
+                timestamp[i][j] = 0;
+            } else {
                 if (timestamp[i][j] == 0) {
                     timestamp[i][j] = current_millis;
-                } else if (current_millis - timestamp[i][j] > KEY_PRESS_DEBOUNCE) {
+                } else if (pressed && (current_millis - timestamp[i][j] > KEY_PRESS_DEBOUNCE)) {
+                    /* On key press */
                     key_pressed[i][j] = true;
-                    timestamp[i][j] = 0;
                     update_key_index(MATRIX[i][j], SOURCE);
-                }
-            } else if (key_pressed[i][j] && !pressed) {
-                /* On key release */
-                if (timestamp[i][j] == 0) {
-                    timestamp[i][j] = current_millis;
-                } else if (current_millis - timestamp[i][j] > KEY_RELEASE_DEBOUNCE) {
+                } else if (!pressed && current_millis - timestamp[i][j] > KEY_RELEASE_DEBOUNCE) {
+                    /* On key release */
                     key_pressed[i][j] = false;
-                    timestamp[i][j] = 0;
                     update_key_index(-MATRIX[i][j], SOURCE);
                 }
             }
@@ -129,31 +132,33 @@ void update_key_index(int8_t index, uint8_t source) {
     LOG_LV2("KINDEX", "I:%i S:%u", index, source);
 
 #ifdef MASTER
-    key_index_t key{
-        .index = index,
-        .source = source
-    };
+    key_index_t key{0};
 
-    if (next_index < KEY_INDEX_NUM && key.index > 0) {
-        key_index[next_index++] = key;
-    } else if (next_index > 0 && key.index < 0) {
+    key.index = index;
+    key.source = source;
+
+    if (next_key < KEY_NUM && key.index > 0) {
+        keys[next_key++] = key;
+    } else if (next_key > 0 && key.index < 0) {
         int i = 0;
         key.index = -key.index;
 
-        while (i < next_index && key_index[i] != key) {
+        while (i < next_key && (keys[i].index != key.index || keys[i].source != key.source)) {
             i++;
         }
 
-        if (i < next_index) {
-            for (i; i < next_index - 1; i++) {
-                key_index[i] = key_index[i + 1];
+        if (i < next_key) {
+            has_key_pending = true; // Has key release to send to computer
+
+            for (i; i < next_key - 1; i++) {
+                keys[i] = keys[i + 1];
             }
 
-            key_index[--next_index] = {0};
+            keys[--next_key] = {0};
         }
     }
 
-    LOG_LV2("KINDEX", "NI:%i", next_index);
+    LOG_LV2("KINDEX", "NI:%i", next_key);
 
     translate_key_index();
 #endif
@@ -165,12 +170,14 @@ void update_key_index(int8_t index, uint8_t source) {
 
 #ifdef MASTER
 void translate_key_index() {
-    int report_index = 0;
-    hid_keyboard_report_t report{0};
     uint8_t layer = _BASE_LAYER;
 
-    for (int i = 0; i < next_index; i++) {
-        uint8_t index = key_index[i].index - 1;
+    for (int i = 0; i < next_key; i++) {
+        if (keys[i].translated) {
+            continue;
+        }
+
+        int8_t index = keys[i].index - 1;
         uint32_t code = KEYMAP[layer][index];
 
         if (IS_LAYER(code)) {
@@ -183,6 +190,7 @@ void translate_key_index() {
         if (code == KC_TRANSPARENT) {
             LOG_LV2("TKI", "Transparent key");
 
+            keys[i].translated = true;
             uint8_t temp_layer = layer;
 
             while (temp_layer >= 0 && KEYMAP[temp_layer][index] == KC_TRANSPARENT) {
@@ -199,18 +207,42 @@ void translate_key_index() {
         if (IS_MOD(code)) {
             LOG_LV2("TKI", "Modifier key");
 
-            report.modifier |= MOD_BIT(code);
+            has_key_pending = true;
+            keys[i].translated = true;
+            keys[i].has_modifiers = true;
+            keys[i].modifiers = MOD_BIT(code);
+
             code = MOD_CODE(code);
         }
 
         if (IS_KEY(code)) {
             LOG_LV2("TKI", "Normal key");
 
-            if (report_index < 6) {
-                report.keycode[report_index++] = code;
-            }
+            has_key_pending = true;
+            keys[i].translated = true;
+            keys[i].is_key = true;
+            keys[i].key = code;
 
             continue;
+        }
+    }
+}
+
+void generate_send_key_report() {
+    LOG_LV2("KEY", "Generating keyboard report");
+    LOG_LV2("KEY", "NI:%i", next_key);
+
+    has_key_pending = false;
+    int report_index = 0;
+    hid_keyboard_report_t report{0};
+
+    for (int i = 0; i < next_key; i++) {
+        if (keys[i].has_modifiers) {
+            report.modifier |= keys[i].modifiers;
+        }
+
+        if (keys[i].is_key && report_index < 6) {
+            report.keycode[report_index++] = keys[i].key;
         }
     }
 
@@ -219,35 +251,35 @@ void translate_key_index() {
 
 #ifdef HAS_SLAVE
 void clear_key_index_from_source(uint8_t source) {
-    LOG_LV2("KINDEX", "Clear all key index with S:%u, NI:%i", source, next_index);
+    LOG_LV2("KINDEX", "Clear all key index with S:%u, NI:%i", source, next_key);
 
-    for (int i = 0; i < next_index; i++) {
-        if (key_index[i].source == source) {
-            key_index[i] = {0};
+    has_key_pending = true;
+
+    for (int i = 0; i < next_key; i++) {
+        if (keys[i].source == source) {
+            keys[i] = {0};
         }
     }
 
-    for (int i = 0; i < next_index; i++) {
-        if (key_index[i].source == 0) {
+    for (int i = 0; i < next_key; i++) {
+        if (keys[i].source == 0) {
             int j = i + 1;
 
-            while (j < next_index && key_index[j].source == 0) {
+            while (j < next_key && keys[j].source == 0) {
                 j++;
             }
 
-            if (j < next_index) {
-                key_index[i] = key_index[j];
+            if (j < next_key) {
+                keys[i] = keys[j];
             }
         }
     }
 
-    while (next_index > 0 && key_index[next_index - 1].source == 0) {
-        next_index--;
+    while (next_key > 0 && keys[next_key - 1].source == 0) {
+        next_key--;
     }
 
-    LOG_LV2("KINDEX", "After clear KI:%i", next_index);
-
-    translate_key_index();
+    LOG_LV2("KINDEX", "After clear KI:%i", next_key);
 }
 #endif
 #endif
