@@ -29,7 +29,21 @@ typedef struct {
 key_index_t keys[KEY_NUM]{0};
 
 int next_key = 0;
-bool has_key_pending = false;
+bool has_key_translate_pending = false;
+bool has_key_send_pending = false;
+
+#ifdef HAS_SLAVE
+typedef struct slave_buffer_s {
+    struct slave_buffer_s *next;
+    int8_t *buffer;
+    int num;
+} slave_buffer_t;
+
+slave_buffer_t *slave_buffer;
+
+bool clear_slave = false;
+bool has_slave_buffer = false;
+#endif
 #endif
 
 void setup() {
@@ -42,15 +56,33 @@ void setup() {
         delay(10);
     }
 
-    setup_ble();
+#ifdef HAS_SLAVE
+    setup_slave_buffer();
+#endif
+
     setup_matrix();
+    setup_ble();
 }
 
 void loop() {
     scan_matrix();
 
 #ifdef MASTER
-    if (has_key_pending) {
+#ifdef HAS_SLAVE
+    if (clear_slave) {
+        clear_slave_index_and_buffer();
+    }
+
+    if (has_slave_buffer) {
+        process_slave_buffer();
+    }
+#endif
+
+    if (has_key_translate_pending) {
+        translate_key_index();
+    }
+
+    if (has_key_send_pending) {
         generate_send_key_report();
     }
 #endif
@@ -62,11 +94,11 @@ void setup_matrix() {
     LOG_LV1("BMK", "Setup matrix");
 
     for (const uint8_t &row : ROWS) {
-        pinMode(row, INPUT);
+        pinMode(row, INPUT_PULLUP);
     }
 
     for (const uint8_t &col : COLS) {
-        pinMode(col, INPUT);
+        pinMode(col, INPUT_PULLUP);
     }
 }
 
@@ -77,17 +109,9 @@ bool scan_matrix() {
     bool has_key = false;
     uint32_t pin_data = 0;
 
-    /* Set columns to INPUT_PULLUP */
-    for (const uint8_t &col : COLS) {
-        pinMode(col, INPUT_PULLUP);
-    }
-
     for (int i = 0; i < MATRIX_ROW_NUM; i++) {
         pinMode(ROWS[i], OUTPUT);
         digitalWrite(ROWS[i], LOW);
-
-        /* Delay a bit for pins to settle down before read pins input. */
-        delay(1);
 
         pin_data = NRF_GPIO->IN;
 
@@ -117,12 +141,7 @@ bool scan_matrix() {
             }
         }
 
-        pinMode(ROWS[i], INPUT);
-    }
-
-    /* After scan, set columns back to INPUT to save power */
-    for (const uint8_t &col : COLS) {
-        pinMode(col, INPUT);
+        pinMode(ROWS[i], INPUT_PULLUP);
     }
 
     return has_key;
@@ -138,29 +157,33 @@ void update_key_index(int8_t index, uint8_t source) {
     key.source = source;
 
     if (next_key < KEY_NUM && key.index > 0) {
+        /* Has new key press, needs translation */
+        has_key_translate_pending = true;
+
         keys[next_key++] = key;
     } else if (next_key > 0 && key.index < 0) {
+        /* Has key release, can send it to computer directly. Don't have to translate again */
+        has_key_send_pending = true;
+
         int i = 0;
         key.index = -key.index;
 
-        while (i < next_key && (keys[i].index != key.index || keys[i].source != key.source)) {
-            i++;
-        }
-
-        if (i < next_key) {
-            has_key_pending = true; // Has key release to send to computer
-
-            for (i; i < next_key - 1; i++) {
-                keys[i] = keys[i + 1];
+        while (i < next_key) {
+            while (keys[i].index != key.index || keys[i].source != key.source) {
+                i++;
             }
 
-            keys[--next_key] = {0};
+            if (i < next_key) {
+                for (i; i < next_key - 1; i++) {
+                    keys[i] = keys[i + 1];
+                }
+
+                keys[--next_key] = {0};
+            }
         }
     }
 
     LOG_LV2("KINDEX", "NI:%i", next_key);
-
-    translate_key_index();
 #endif
 
 #ifdef SLAVE
@@ -170,6 +193,7 @@ void update_key_index(int8_t index, uint8_t source) {
 
 #ifdef MASTER
 void translate_key_index() {
+    has_key_translate_pending = false;
     uint8_t layer = _BASE_LAYER;
 
     for (int i = 0; i < next_key; i++) {
@@ -207,7 +231,7 @@ void translate_key_index() {
         if (IS_MOD(code)) {
             LOG_LV2("TKI", "Modifier key");
 
-            has_key_pending = true;
+            has_key_send_pending = true;
             keys[i].translated = true;
             keys[i].has_modifiers = true;
             keys[i].modifiers = MOD_BIT(code);
@@ -218,7 +242,7 @@ void translate_key_index() {
         if (IS_KEY(code)) {
             LOG_LV2("TKI", "Normal key");
 
-            has_key_pending = true;
+            has_key_send_pending = true;
             keys[i].translated = true;
             keys[i].is_key = true;
             keys[i].key = code;
@@ -232,7 +256,7 @@ void generate_send_key_report() {
     LOG_LV2("KEY", "Generating keyboard report");
     LOG_LV2("KEY", "NI:%i", next_key);
 
-    has_key_pending = false;
+    has_key_send_pending = false;
     int report_index = 0;
     hid_keyboard_report_t report{0};
 
@@ -250,13 +274,22 @@ void generate_send_key_report() {
 }
 
 #ifdef HAS_SLAVE
-void clear_key_index_from_source(uint8_t source) {
-    LOG_LV2("KINDEX", "Clear all key index with S:%u, NI:%i", source, next_key);
+void clear_slave_index_and_buffer() {
+    LOG_LV2("KINDEX", "Clear all key index from slave");
 
-    has_key_pending = true;
+    /* Reset clear slave flag */
+    clear_slave = false;
+
+    /* Set send key pending flag to release all key press from slave */
+    has_key_send_pending = true;
+
+    /* Reset slave buffer */
+    has_slave_buffer = false;
+    slave_buffer->num = 0;
+    slave_buffer->next->num = 0;
 
     for (int i = 0; i < next_key; i++) {
-        if (keys[i].source == source) {
+        if (keys[i].source == SOURCE_SLAVE) {
             keys[i] = {0};
         }
     }
@@ -278,8 +311,44 @@ void clear_key_index_from_source(uint8_t source) {
     while (next_key > 0 && keys[next_key - 1].source == 0) {
         next_key--;
     }
+}
 
-    LOG_LV2("KINDEX", "After clear KI:%i", next_key);
+void setup_slave_buffer() {
+    LOG_LV2("BMK", "Setup slave buffer");
+
+    slave_buffer_t *buffer_a = new slave_buffer_t{0};
+    buffer_a->buffer = new int8_t[SLAVE_BUFFER_NUM];
+
+    slave_buffer_t *buffer_b = new slave_buffer_t{0};
+    buffer_b->buffer = new int8_t[SLAVE_BUFFER_NUM];
+
+    buffer_a->next = buffer_b;
+    buffer_b->next = buffer_a;
+
+    slave_buffer = buffer_a;
+}
+
+void add_slave_key_index_to_buffer(int8_t index) {
+    LOG_LV2("ADDSKI", "I:%i", index);
+
+    has_slave_buffer = true;
+    if (slave_buffer->num < SLAVE_BUFFER_NUM) {
+        slave_buffer->buffer[slave_buffer->num++] = index;
+    }
+}
+
+void process_slave_buffer() {
+    LOG_LV2("BMK", "Process slave buffer");
+
+    has_slave_buffer = false;
+    slave_buffer = slave_buffer->next;
+
+    slave_buffer_t *buffer = slave_buffer->next;
+    for (int i = 0; i < buffer->num; i++) {
+        update_key_index(buffer->buffer[i], SOURCE_SLAVE);
+    }
+
+    buffer->num = 0;
 }
 #endif
 #endif

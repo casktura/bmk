@@ -9,6 +9,7 @@
 #define SCAN_DELAY           8
 #define KEY_PRESS_DEBOUNCE   10
 #define KEY_RELEASE_DEBOUNCE 15
+#define SLAVE_BUFFER_NUM     10
 
 void setup_matrix(void);
 bool scan_matrix(void);
@@ -19,7 +20,12 @@ void translate_key_index(void);
 void generate_send_key_report(void);
 
 #ifdef HAS_SLAVE
-void clear_key_index_from_source(uint8_t source);
+extern bool clear_slave;
+
+void clear_slave_index_and_buffer(void);
+void setup_slave_buffer(void);
+void add_slave_key_index_to_buffer(int8_t index);
+void process_slave_buffer(void);
 #endif
 #endif
 
