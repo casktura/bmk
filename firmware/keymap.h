@@ -23,9 +23,9 @@ const uint32_t KEYMAP[][MATRIX_COL_NUM * 2 * MATRIX_ROW_NUM] = {
         XXXXXXX, XXXXXXX, KC_LGUI, KC_LALT, KC_L1,   KC_SPC,  XXXXXXX, XXXXXXX, KC_RSFT, KC_L2,   KC_LEFT, KC_DOWN, KC_UP,   KC_RGHT
     },
     [_L1] = {
-        KC_VOLU, KC_EXLM, KC_AT,   KC_HASH, KC_DLR,  KC_PERC, KC_LCBR, KC_RCBR, KC_CIRC, KC_AMPR, KC_ASTR, KC_MINS, KC_EQL,  XXXXXXX,
+        KC_VOLU, KC_EXLM, KC_AT,   KC_HASH, KC_DLR,  KC_PERC, KC_LCBR, KC_RCBR, KC_CIRC, KC_AMPR, KC_ASTR, KC_MINS, KC_EQL,  _______,
         KC_VOLD, KC_1,    KC_2,    KC_3,    KC_4,    KC_5,    KC_LBRC, KC_RBRC, KC_6,    KC_7,    KC_8,    KC_9,    KC_0,    XXXXXXX,
-        KC_MUTE, XXXXXXX, XXXXXXX, KC_GRV,  KC_TILD, KC_LPRN, XXXXXXX, _______, KC_RPRN, KC_BSLS, KC_PIPE, KC_UNDS, KC_PLUS, XXXXXXX,
+        KC_MUTE, XXXXXXX, XXXXXXX, KC_GRV,  KC_TILD, KC_LPRN, XXXXXXX, _______, KC_RPRN, KC_BSLS, KC_PIPE, KC_UNDS, KC_PLUS, _______,
         XXXXXXX, XXXXXXX, _______, _______, XXXXXXX, _______, XXXXXXX, XXXXXXX, _______, XXXXXXX, _______, _______, _______, _______
     },
     [_L2] = {

@@ -90,6 +90,11 @@ void loop() {
     delay(SCAN_DELAY);
 }
 
+void rtos_idle_callback() {
+    /* Do nothing in idle state to save power */
+    sd_app_evt_wait();
+}
+
 void setup_matrix() {
     LOG_LV1("BMK", "Setup matrix");
 
