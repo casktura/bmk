@@ -4,6 +4,7 @@ BLEDis ble_dis;
 
 #ifdef MASTER
 BLEHidAdafruit ble_hid;
+bool sent_key_release = true;
 
 #ifdef HAS_SLAVE
 /* Slave link */
@@ -15,8 +16,6 @@ void slave_scan_callback(ble_gap_evt_adv_report_t *report);
 void slave_connect_callback(uint16_t conn_hdl);
 void slave_disconnect_callback(uint16_t conn_hdl, uint8_t reason);
 #endif
-
-bool sent_key_release = true;
 #endif
 
 #ifdef SLAVE
@@ -136,9 +135,7 @@ void send_key_report(hid_keyboard_report_t *report) {
 void slave_notify_callback(BLEClientCharacteristic* chr, uint8_t* data, uint16_t len) {
     if (len > 0) {
         if (chr->uuid == chr_slave_index.uuid) {
-            /* Got key index from slave side, update it to key_index */
-            /* TODO: Should get source from notification too? */
-            update_key_index((int8_t) data[0], SOURCE_SLAVE);
+            add_slave_key_index_to_buffer((int8_t) data[0]);
         }
     }
 }
@@ -166,9 +163,7 @@ void slave_connect_callback(uint16_t conn_hdl) {
 }
 
 void slave_disconnect_callback(uint16_t conn_hdl, uint8_t reason) {
-    /* Clear all registered key index from slave */
-    /* TODO: Check for slave source then clear the correct one */
-    clear_key_index_from_source(SOURCE_SLAVE);
+    clear_slave = true;
 
     (void) conn_hdl;
     (void) reason;
